@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Image Vectorizer - Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 920px; margin: 2rem auto; }
+    .preview { border: 1px solid #ddd; padding: 1rem; margin-top: 1rem; }
+    img { max-width: 100%; height: auto; }
+    textarea { width:100%; height:200px; }
+    label { display:block; margin-top:.5rem; }
+    .controls { display:flex; gap:1rem; flex-wrap:wrap; }
+    .control { padding:.5rem; border:1px solid #eee; border-radius:4px; min-width:180px; }
+  </style>
+</head>
+<body>
+  <h1>Image Vectorizer</h1>
+  <p>Bir görsel seçin, Potrace parametrelerini ayarlayın, vektörleştirin ve SVG/PDF/EPS olarak indirin.</p>
+
+  <form id="uploadForm">
+    <label>
+      Dosya:
+      <input type="file" name="image" accept="image/*" required />
+    </label>
+
+    <div class="controls">
+      <div class="control">
+        <label>Turd size (küçük detayları yok etme, 0 bırakılırsa korunur)</label>
+        <input type="number" name="turdSize" min="0" value="100" />
+      </div>
+
+      <div class="control">
+        <label>OptCurve (daha düzgün eğriler)</label>
+        <input type="checkbox" name="optCurve" checked />
+      </div>
+
+      <div class="control">
+        <label>Threshold (0.0 - 1.0, eşiği manuel ayarlamak isterseniz)</label>
+        <input type="number" step="0.01" min="0" max="1" name="threshold" placeholder="auto" />
+      </div>
+
+      <div class="control">
+        <label>Turn policy</label>
+        <select name="turnPolicy">
+          <option value="">(varsayılan)</option>
+          <option value="black">black</option>
+          <option value="white">white</option>
+          <option value="left">left</option>
+          <option value="right">right</option>
+          <option value="minority">minority</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label>Max width for preprocessing (px)</label>
+        <input type="number" name="maxWidth" min="256" value="2048" />
+      </div>
+
+      <div class="control">
+        <label>İndirilecek formatlar</label>
+        <label><input type="checkbox" name="out_svg" checked /> SVG</label>
+        <label><input type="checkbox" name="out_pdf" /> PDF</label>
+        <label><input type="checkbox" name="out_eps" /> EPS</label>
+      </div>
+    </div>
+
+    <p>
+      <button type="submit">Yükle ve Vektörize Et</button>
+    </p>
+  </form>
+
+  <div id="result" class="preview"></div>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const result = document.getElementById('result');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = e.target.image.files[0];
+      if (!file) return alert('Lütfen bir dosya seçin.');
+
+      const fd = new FormData();
+      fd.append('image', file);
+
+      // Append control values
+      const turdSize = e.target.turdSize.value;
+      if (turdSize) fd.append('turdSize', turdSize);
+
+      if (e.target.optCurve.checked) fd.append('optCurve', '1');
+
+      const threshold = e.target.threshold.value;
+      if (threshold !== '') fd.append('threshold', threshold);
+
+      const turnPolicy = e.target.turnPolicy.value;
+      if (turnPolicy) fd.append('turnPolicy', turnPolicy);
+
+      const maxWidth = e.target.maxWidth.value;
+      if (maxWidth) fd.append('maxWidth', maxWidth);
+
+      result.innerText = 'Yükleniyor ve işleniyor... lütfen bekleyin';
+
+      try {
+        const resp = await fetch('/api/vectorize', { method: 'POST', body: fd });
+        if (!resp.ok) {
+          const err = await resp.json().catch(()=>({}));
+          result.innerText = 'İşlem başarısız: ' + (err.error || resp.statusText);
+          return;
+        }
+        const data = await resp.json();
+
+        // Build download links according to selected outputs
+        const wantSvg = e.target.out_svg.checked;
+        const wantPdf = e.target.out_pdf.checked;
+        const wantEps = e.target.out_eps.checked;
+
+        let links = '';
+        if (wantSvg) links += `<a href="${data.downloads.svg}" target="_blank">SVG indir</a> | `;
+        if (wantPdf) links += `<a href="${data.downloads.pdf}" target="_blank">PDF indir</a> | `;
+        if (wantEps) links += `<a href="${data.downloads.eps}" target="_blank">EPS indir</a> | `;
+        links = links.replace(/\s\|\s?$/, ''); // trim trailing separator
+
+        result.innerHTML = `
+          <h3>Sonuç</h3>
+          <p>${links}</p>
+          <h4>SVG Önizleme</h4>
+          <div>${data.svg}</div>
+          <h4>SVG Kaynak</h4>
+          <textarea readonly>${data.svg.replace(/</g,'&lt;')}</textarea>
+          <h4>Kullanılan Potrace Seçenekleri</h4>
+          <pre>${JSON.stringify(data.options, null, 2)}</pre>
+        `;
+      } catch (err) {
+        result.innerText = 'Sunucu hatası: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
